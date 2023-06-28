@@ -1,0 +1,256 @@
+---
+title: "Trabajo Final"
+author: "Mauricio Lucero"
+date: "2023-06-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(DataExplorer)
+library(factoextra)
+library(tidyverse)
+library(dplyr)
+library(rsample)
+library(parsnip)
+library(recipes)
+library(workflows)
+library(yardstick)
+library(caret)
+library(tensorflow)
+library(keras)
+library(reticulate)
+library(nnet)
+library(neuralnet)
+library(stargazer)
+library(broom)
+library(ggplot2)
+library(modelr)
+library(MASS)
+
+set.seed(163)
+
+```
+
+```{r}
+df <-read.csv("Steel_industry_data.csv")
+glimpse(df)
+```
+```{r}
+plot_intro(df)
+```
+
+```{r}
+df=df %>% dplyr::select(-date)
+df$WeekStatus[df$WeekStatus == "Weekend"]<-0
+df$WeekStatus[df$WeekStatus == "Weekday"]<-1
+df$WeekStatus<-as.double(df$WeekStatus)
+glimpse(df)
+```
+
+```{r}
+df=df %>% dplyr::select(-Day_of_week)
+colnames(df)<-c("Usage_kWh","Lagging.Power","Leading.Power","CO2","Lagging.Factor","Leading.Factor","NSM","WeekStatus","Load_Typer")
+
+```
+
+
+```{r}
+plot_intro(df)
+```
+
+```{r}
+plot_correlation(df)
+```
+
+```{r}
+variables <- c("Lagging.Power","Leading.Power","CO2","Lagging.Factor","Leading.Factor","NSM")
+
+plots <- list()
+
+for (variable in variables) {
+  plot <- ggplot(df) +
+    geom_boxplot(aes(x = Usage_kWh, y = .data[[variable]], fill = Usage_kWh), shape = "circle") +
+    scale_fill_hue(direction = -1) +
+    theme_gray() +
+    ggtitle(paste("Gráfico de", variable))
+  print(plot)
+  plots[[variable]] <- plot
+}
+
+
+```
+
+```{r}
+for (i in c("Lagging.Power","Leading.Power","CO2","Lagging.Factor","Leading.Factor","NSM"))
+{
+outliers <- boxplot.stats(df[[i]])$out
+df[[i]][df[[i]] %in% outliers] <- NA
+}
+df <- filter_if(df, is.numeric , all_vars(!is.na(.)))
+
+```
+
+```{r}
+variables <- c("Lagging.Power","Leading.Power","CO2","Lagging.Factor","Leading.Factor","NSM")
+
+plots <- list()
+
+for (variable in variables) {
+  plot <- ggplot(df) +
+    geom_boxplot(aes(x = Usage_kWh, y = .data[[variable]], fill = Usage_kWh), shape = "circle") +
+    scale_fill_hue(direction = -1) +
+    theme_gray() +
+    ggtitle(paste("Gráfico de", variable))
+  print(plot)
+  plots[[variable]] <- plot
+}
+```
+
+```{r}
+y <-df$Usage_kWh
+x=df %>% dplyr::select(-Usage_kWh)
+plot_prcomp(x)
+```
+```{r}
+df=df %>% dplyr::select(-Load_Typer)
+df <- as.data.frame(scale(df))
+```
+
+
+```{r}
+split <- initial_split(df, prop = 0.8)
+train_data <- training(split)
+test_data <- testing(split)
+
+```
+### Metodologías Supervisadas
+
+
+#### Regresión Logística
+
+```{r}
+fit1 <- glm(formula=Usage_kWh ~ .,data=train_data)
+summary(fit1)
+```
+```{r}
+pred_logistic<-predict(fit1,test_data,type="response")
+```
+
+```{r}
+head(pred_logistic)
+```
+
+
+```{r}
+cor(pred_logistic, test_data$Usage_kWh)
+```
+```{r}
+diferencias_cuadradas <- (pred_logistic - test_data$Usage_kWh)^2
+mse <- mean(diferencias_cuadradas)
+mse
+```
+
+
+#### Árbol de decisiones
+```{r}
+library(tree)
+tree.fit <- tree(Usage_kWh ~ ., data = train_data)
+summary(tree.fit)
+```
+```{r}
+plot(tree.fit)
+text(tree.fit, pretty = 0)
+```
+```{r}
+tree_pred <- predict(tree.fit, test_data)
+```
+
+```{r}
+cor(tree_pred, test_data$Usage_kWh)
+```
+```{r}
+diferencias_cuadradas <- (tree_pred - test_data$Usage_kWh)^2
+mse <- mean(diferencias_cuadradas)
+mse
+```
+
+
+#### Máquina de Vectores de Soporte
+
+```{r}
+library(e1071)
+svm1<-svm(formula = Usage_kWh~., data=train_data, kernel="radial")
+svm2<-svm(formula = Usage_kWh~., data=train_data, kernel="linear")
+```
+```{r}
+pred1<-predict(svm1, newdata=test_data)
+pred2<-predict(svm2, newdata=test_data)
+```
+
+```{r}
+cor(pred1, test_data$Usage_kWh)
+cor(pred2, test_data$Usage_kWh)
+```
+```{r}
+diferencias_cuadradas <- (pred1 - test_data$Usage_kWh)^2
+mse <- mean(diferencias_cuadradas)
+mse
+```
+```{r}
+diferencias_cuadradas <- (pred2 - test_data$Usage_kWh)^2
+mse <- mean(diferencias_cuadradas)
+mse
+```
+
+
+
+
+#### Redes Neuronales Artificiales
+
+```{r}
+concrete_model <- neuralnet(Usage_kWh ~ .,data = train_data)
+```
+```{r}
+plot(concrete_model, rep="best")
+```
+
+```{r}
+predictions <- compute(concrete_model, test_data)
+```
+
+```{r}
+predicted_values <- predictions$net.result
+```
+
+```{r}
+cor(predicted_values, test_data$Usage_kWh)
+```
+
+```{r}
+diferencias_cuadradas <- (predicted_values - test_data$Usage_kWh)^2
+mse <- mean(diferencias_cuadradas)
+mse
+```
+
+```{r}
+train_predictions <- compute(concrete_model, train_data)
+train_predicted_values <- train_predictions$net.result
+train_error <- sum((train_predicted_values - train_data$Usage_kWh)^2) / nrow(train_data)
+
+# Error en el conjunto de prueba
+test_predictions <- compute(concrete_model, test_data)
+test_predicted_values <- test_predictions$net.result
+test_error <- sum((test_predicted_values - test_data$Usage_kWh)^2) / nrow(test_data)
+
+# Imprimir los errores
+cat("Error en el conjunto de entrenamiento:", train_error, "\n")
+cat("Error en el conjunto de prueba:", test_error, "\n")
+```
+
+
+
